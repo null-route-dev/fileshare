@@ -130,3 +130,13 @@ USE_TZ = True
 STATIC_URL = "static/"
 
 AUTH_USER_MODEL = "users.User"
+
+# Use in-memory storage for tests
+STORAGES = {
+    "default": {
+        "BACKEND": "django.core.files.storage.InMemoryStorage",
+    },
+    "staticfiles": {
+        "BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage",
+    },
+}
