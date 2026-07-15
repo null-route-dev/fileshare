@@ -9,7 +9,6 @@ WORKDIR /app
 COPY --from=builder /app/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt && rm requirements.txt
 COPY . .
-RUN rm pyproject.toml poetry.lock
-ENV PYTHONPATH="/app"
+RUN chmod +x entrypoint.sh
 EXPOSE 8000
-CMD ["python", "manage.py", "runserver", "0.0.0.0:8000"]
+ENTRYPOINT ["./entrypoint.sh"]
