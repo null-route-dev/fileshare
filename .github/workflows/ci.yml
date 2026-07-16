@@ -49,6 +49,7 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
+
       redis:
         image: redis:7-alpine
         ports:
@@ -58,6 +59,21 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
+
+      minio:
+        image: minio/minio:latest
+        env:
+          MINIO_ROOT_USER: ${{ vars.AWS_ACCESS_KEY_ID }}
+          MINIO_ROOT_PASSWORD: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        ports:
+          - 9000:9000
+        options: >-
+          --health-cmd "curl -f http://localhost:9000/minio/health/live"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        command: server /data --console-address ":9001"
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -73,6 +89,29 @@ jobs:
       - name: Install dependencies
         run: poetry install --no-interaction
 
+      - name: Create MinIO bucket
+        run: poetry run python manage.py create_minio_bucket
+        env:
+          SECRET_KEY: ${{ secrets.SECRET_KEY }}
+          DEBUG: ${{ vars.DEBUG }}
+          DB_NAME: ${{ vars.DB_NAME }}
+          DB_USER: ${{ vars.DB_USER }}
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+          DB_HOST: ${{ vars.DB_HOST }}
+          DB_PORT: ${{ vars.DB_PORT }}
+          REDIS_URL: ${{ vars.REDIS_URL }}
+          ALLOWED_HOSTS: ${{ vars.ALLOWED_HOSTS }}
+          AWS_ACCESS_KEY_ID: ${{ vars.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_STORAGE_BUCKET_NAME: ${{ vars.AWS_STORAGE_BUCKET_NAME }}
+          AWS_S3_ENDPOINT_URL: ${{ vars.AWS_S3_ENDPOINT_URL }}
+          AWS_S3_REGION_NAME: ${{ vars.AWS_S3_REGION_NAME }}
+          AWS_S3_CUSTOM_DOMAIN: ${{ vars.AWS_S3_CUSTOM_DOMAIN }}
+          AWS_S3_FILE_OVERWRITE: ${{ vars.AWS_S3_FILE_OVERWRITE }}
+          AWS_DEFAULT_ACL: ${{ vars.AWS_DEFAULT_ACL }}
+          AWS_QUERYSTRING_AUTH: ${{ vars.AWS_QUERYSTRING_AUTH }}
+          AWS_QUERYSTRING_EXPIRE: ${{ vars.AWS_QUERYSTRING_EXPIRE }}
+
       - name: Run tests
         run: poetry run pytest
         env:
@@ -85,6 +124,16 @@ jobs:
           DB_PORT: ${{ vars.DB_PORT }}
           REDIS_URL: ${{ vars.REDIS_URL }}
           ALLOWED_HOSTS: ${{ vars.ALLOWED_HOSTS }}
+          AWS_ACCESS_KEY_ID: ${{ vars.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_STORAGE_BUCKET_NAME: ${{ vars.AWS_STORAGE_BUCKET_NAME }}
+          AWS_S3_ENDPOINT_URL: ${{ vars.AWS_S3_ENDPOINT_URL }}
+          AWS_S3_REGION_NAME: ${{ vars.AWS_S3_REGION_NAME }}
+          AWS_S3_CUSTOM_DOMAIN: ${{ vars.AWS_S3_CUSTOM_DOMAIN }}
+          AWS_S3_FILE_OVERWRITE: ${{ vars.AWS_S3_FILE_OVERWRITE }}
+          AWS_DEFAULT_ACL: ${{ vars.AWS_DEFAULT_ACL }}
+          AWS_QUERYSTRING_AUTH: ${{ vars.AWS_QUERYSTRING_AUTH }}
+          AWS_QUERYSTRING_EXPIRE: ${{ vars.AWS_QUERYSTRING_EXPIRE }}
 
   build:
     name: Build Docker image
