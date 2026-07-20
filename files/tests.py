@@ -1,5 +1,6 @@
 import pytest
 import datetime
+from datetime import timedelta
 from django.urls import reverse
 from django.utils import timezone
 from rest_framework import status
@@ -322,3 +323,79 @@ class TestFileSharing:
         download_url = reverse("files-download", args=[self.file_obj.id])
         response = self.client.get(download_url)
         assert response.status_code == status.HTTP_200_OK
+
+
+class TestFileFiltering:
+    def setup_method(self):
+        self.client = APIClient()
+        self.user = User.objects.create_user(
+            username="testuser", email="test@example.com", password="testpass"
+        )
+        login_data = {"email": "test@example.com", "password": "testpass"}
+        token_url = reverse("token_obtain_pair")
+        response = self.client.post(token_url, login_data)
+        self.access_token = response.data["access"]
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {self.access_token}")
+        self.list_url = reverse("files-list")
+
+        self.files = []
+        names = ["alpha.txt", "beta.pdf", "gamma.jpg", "delta.txt"]
+        sizes = [100, 500, 1000, 200]
+        mimes = ["text/plain", "application/pdf", "image/jpeg", "text/plain"]
+        now = timezone.now()
+        for i, (name, size, mime) in enumerate(zip(names, sizes, mimes)):
+            uploaded = SimpleUploadedFile(name, b"content" * size, content_type=mime)
+            file_obj = FileService.create_file(self.user, uploaded)
+            uploaded_at = now - timedelta(days=i)
+            File.objects.filter(id=file_obj.id).update(
+                uploaded_at=uploaded_at, size=size, mime_type=mime
+            )
+            self.files.append(file_obj)
+
+    def teardown_method(self):
+        for file_obj in self.files:
+            if file_obj.s3_key and default_storage.exists(file_obj.s3_key):
+                default_storage.delete(file_obj.s3_key)
+
+    def test_search_by_name(self):
+        response = self.client.get(self.list_url, {"search": "alpha"})
+        assert response.status_code == status.HTTP_200_OK
+        assert len(response.data) == 1
+        assert response.data[0]["name"] == "alpha.txt"
+
+    def test_filter_by_mime_type(self):
+        response = self.client.get(self.list_url, {"mime_type": "text/plain"})
+        assert response.status_code == status.HTTP_200_OK
+        assert len(response.data) == 2
+        names = [f["name"] for f in response.data]
+        assert "alpha.txt" in names
+        assert "delta.txt" in names
+
+    def test_filter_by_size_range(self):
+        response = self.client.get(self.list_url, {"size_min": 200, "size_max": 800})
+        assert response.status_code == status.HTTP_200_OK
+        assert len(response.data) == 2
+        sizes = [f["size"] for f in response.data]
+        assert all(200 <= s <= 800 for s in sizes)
+
+    def test_filter_by_uploaded_at_range(self):
+        now = timezone.now()
+        after = (now - timedelta(days=4)).isoformat()
+        response = self.client.get(self.list_url, {"uploaded_at_after": after})
+        assert response.status_code == status.HTTP_200_OK
+        assert len(response.data) == 4
+        for file_data in response.data:
+            uploaded_at = file_data["uploaded_at"]
+            assert uploaded_at >= after
+
+    def test_ordering_by_name_asc(self):
+        response = self.client.get(self.list_url, {"ordering": "name"})
+        assert response.status_code == status.HTTP_200_OK
+        names = [f["name"] for f in response.data]
+        assert names == sorted(names)
+
+    def test_ordering_by_size_desc(self):
+        response = self.client.get(self.list_url, {"ordering": "-size"})
+        assert response.status_code == status.HTTP_200_OK
+        sizes = [f["size"] for f in response.data]
+        assert sizes == sorted(sizes, reverse=True)
