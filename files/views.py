@@ -5,6 +5,8 @@ from django.core.exceptions import ValidationError
 from rest_framework import viewsets, permissions, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
+from django_filters.rest_framework import DjangoFilterBackend
+from rest_framework.filters import SearchFilter, OrderingFilter
 from .models import File, SharedAccess
 from .serializers import (
     FileSerializer,
@@ -15,12 +17,18 @@ from .serializers import (
 )
 from .services import FileService, SharingService
 from .permissions import IsOwnerOrReadOnly
+from .filters import FileFilter
 
 
 class FileViewSet(viewsets.ModelViewSet):
     queryset = File.objects.all()
     serializer_class = FileSerializer
     permission_classes = [permissions.IsAuthenticated, IsOwnerOrReadOnly]
+    filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
+    filterset_class = FileFilter
+    search_fields = ["name"]
+    ordering_fields = ["name", "uploaded_at", "size"]
+    ordering = ["-uploaded_at"]
 
     def get_queryset(self):
         user = self.request.user
