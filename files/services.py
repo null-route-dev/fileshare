@@ -1,7 +1,9 @@
+import secrets
 import mimetypes
 from django.core.files.storage import default_storage
 from django.core.files.base import ContentFile
 from django.utils.text import get_valid_filename
+from django.core.cache import cache
 from django.core.exceptions import ValidationError
 from .models import File, SharedAccess
 from users.models import User
@@ -109,3 +111,25 @@ class SharingService:
         file_obj.save(update_fields=["is_shared"])
 
         return file_obj
+
+    @staticmethod
+    def generate_public_link(file_obj, owner, expires_in_seconds=3600):
+        if file_obj.user != owner:
+            raise ValidationError(
+                {"error": "Only the owner can generate a public link."}
+            )
+
+        token = secrets.token_urlsafe(32)
+        cache_key = f"public_link:{token}"
+        cache.set(cache_key, file_obj.id, timeout=expires_in_seconds)
+        return token
+
+    @staticmethod
+    def get_file_from_public_token(token):
+        cache_key = f"public_link:{token}"
+        file_id = cache.get(cache_key)
+        if not file_id:
+            raise ValidationError({"error": "Invalid or expired link."})
+
+        cache.delete(cache_key)
+        return file_id

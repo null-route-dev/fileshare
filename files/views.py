@@ -5,6 +5,7 @@ from django.core.exceptions import ValidationError
 from rest_framework import viewsets, permissions, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
+from rest_framework.views import APIView
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework.filters import SearchFilter, OrderingFilter
 from .models import File, SharedAccess
@@ -186,3 +187,71 @@ class FileViewSet(viewsets.ModelViewSet):
             return Response(
                 {"errors": e.message_dict}, status=status.HTTP_400_BAD_REQUEST
             )
+
+    @action(detail=True, methods=["post"], url_path="generate-link")
+    def generate_public_link(self, request, pk=None):
+        try:
+            file_obj = File.objects.get(pk=pk)
+        except File.DoesNotExist:
+            return Response(
+                {"error": "File not found."}, status=status.HTTP_404_NOT_FOUND
+            )
+
+        if file_obj.user != request.user:
+            return Response(
+                {"error": "Only the owner can generate a public link."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        expires_in = request.data.get("expires_in_seconds", 3600)
+        if not isinstance(expires_in, int) or expires_in <= 0:
+            return Response(
+                {"error": "expires_in_seconds must be a positive integer."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            token = SharingService.generate_public_link(
+                file_obj, request.user, expires_in
+            )
+            link = request.build_absolute_uri(f"/api/public/{token}/")
+            return Response(
+                {"link": link, "token": token, "expires_in_seconds": expires_in},
+                status=status.HTTP_201_CREATED,
+            )
+        except ValidationError as e:
+            return Response(
+                {"errors": e.message_dict}, status=status.HTTP_400_BAD_REQUEST
+            )
+
+
+class PublicDownloadView(APIView):
+    permission_classes = []
+
+    def get(self, request, token):
+        try:
+            file_id = SharingService.get_file_from_public_token(token)
+        except ValidationError as e:
+            return Response({"error": str(e)}, status=status.HTTP_404_NOT_FOUND)
+
+        try:
+            file_obj = File.objects.get(id=file_id)
+        except File.DoesNotExist:
+            return Response(
+                {"error": "File not found."}, status=status.HTTP_404_NOT_FOUND
+            )
+
+        if not default_storage.exists(file_obj.s3_key):
+            return Response(
+                {"error": "File not found."}, status=status.HTTP_404_NOT_FOUND
+            )
+
+        file_handle = default_storage.open(file_obj.s3_key, "rb")
+        response = FileResponse(
+            file_handle,
+            as_attachment=True,
+            filename=file_obj.name,
+            content_type="application/octet-stream",
+        )
+        response["Content-Disposition"] = f'attachment; filename="{file_obj.name}"'
+        return response
