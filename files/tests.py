@@ -3,6 +3,7 @@ import datetime
 from datetime import timedelta
 from django.urls import reverse
 from django.utils import timezone
+from django.core.cache import cache
 from rest_framework import status
 from rest_framework.test import APIClient
 from django.core.files.uploadedfile import SimpleUploadedFile
@@ -399,3 +400,80 @@ class TestFileFiltering:
         assert response.status_code == status.HTTP_200_OK
         sizes = [f["size"] for f in response.data]
         assert sizes == sorted(sizes, reverse=True)
+
+
+class TestPublicLinks:
+    def setup_method(self):
+        self.client = APIClient()
+        self.owner = User.objects.create_user(
+            username="owner", email="owner@example.com", password="testpass"
+        )
+        login_data = {"email": "owner@example.com", "password": "testpass"}
+        token_url = reverse("token_obtain_pair")
+        response = self.client.post(token_url, login_data)
+        self.access_token = response.data["access"]
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {self.access_token}")
+        uploaded = SimpleUploadedFile("test.txt", b"content", content_type="text/plain")
+        self.file_obj = FileService.create_file(self.owner, uploaded)
+        self.generate_url = reverse(
+            "files-generate-public-link", args=[self.file_obj.id]
+        )
+
+    def teardown_method(self):
+        cache.clear()
+        if self.file_obj.s3_key and default_storage.exists(self.file_obj.s3_key):
+            default_storage.delete(self.file_obj.s3_key)
+
+    def test_generate_public_link_success(self):
+        data = {"expires_in_seconds": 60}
+        response = self.client.post(self.generate_url, data, format="json")
+        assert response.status_code == status.HTTP_201_CREATED
+        assert "link" in response.data
+        assert "token" in response.data
+        assert response.data["expires_in_seconds"] == 60
+
+    def test_generate_public_link_forbidden_for_non_owner(self):
+        User.objects.create_user(
+            username="other", email="other@example.com", password="testpass"
+        )
+        self.client.credentials()
+        login_data = {"email": "other@example.com", "password": "testpass"}
+        token_url = reverse("token_obtain_pair")
+        response = self.client.post(token_url, login_data)
+        assert response.status_code == status.HTTP_200_OK
+        token = response.data["access"]
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {token}")
+        response = self.client.post(
+            self.generate_url, {"expires_in_seconds": 60}, format="json"
+        )
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+
+    def test_public_download_success(self):
+        response = self.client.post(
+            self.generate_url, {"expires_in_seconds": 60}, format="json"
+        )
+        token = response.data["token"]
+        self.client.credentials()
+        public_url = reverse("public-download", args=[token])
+        response = self.client.get(public_url)
+        assert response.status_code == status.HTTP_200_OK
+        content = b"".join(response.streaming_content)
+        assert content == b"content"
+
+    def test_public_download_once(self):
+        response = self.client.post(
+            self.generate_url, {"expires_in_seconds": 60}, format="json"
+        )
+        token = response.data["token"]
+        self.client.credentials()
+        public_url = reverse("public-download", args=[token])
+        response = self.client.get(public_url)
+        assert response.status_code == status.HTTP_200_OK
+        response = self.client.get(public_url)
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+
+    def test_public_download_expired(self):
+        self.client.credentials()
+        public_url = reverse("public-download", args=["invalid-token"])
+        response = self.client.get(public_url)
+        assert response.status_code == status.HTTP_404_NOT_FOUND
