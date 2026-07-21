@@ -173,3 +173,10 @@ SPECTACULAR_SETTINGS = {
     "TITLE": "FileShare API",
     "DESCRIPTION": "REST API for file storage and sharing.",
 }
+
+CACHES = {
+    "default": {
+        "BACKEND": "django.core.cache.backends.redis.RedisCache",
+        "LOCATION": env("REDIS_URL"),
+    }
+}
