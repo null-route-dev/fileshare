@@ -1,5 +1,7 @@
+import io
 import secrets
 import mimetypes
+from PIL import Image
 from django.core.files.storage import default_storage
 from django.core.files.base import ContentFile
 from django.utils.text import get_valid_filename
@@ -34,6 +36,25 @@ class FileService:
         if file_obj.s3_key and default_storage.exists(file_obj.s3_key):
             default_storage.delete(file_obj.s3_key)
         file_obj.delete()
+
+    @staticmethod
+    def generate_preview(file_obj, size=(200, 200)):
+        if not file_obj.mime_type.startswith("image/"):
+            return None
+        if not default_storage.exists(file_obj.s3_key):
+            return None
+        try:
+            with default_storage.open(file_obj.s3_key, "rb") as f:
+                img = Image.open(f)
+                img.thumbnail(size, Image.Resampling.LANCZOS)
+                preview_io = io.BytesIO()
+                if img.mode in ("RGBA", "LA", "P"):
+                    img = img.convert("RGB")
+                img.save(preview_io, format="JPEG", quality=85)
+                preview_io.seek(0)
+                return preview_io
+        except Exception:
+            return None
 
 
 class SharingService:
