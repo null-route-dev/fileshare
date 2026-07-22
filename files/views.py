@@ -92,17 +92,23 @@ class FileViewSet(viewsets.ModelViewSet):
         response["Content-Disposition"] = f'attachment; filename="{file_obj.name}"'
         return response
 
-    @action(detail=True, methods=['get'], url_path='preview')
+    @action(detail=True, methods=["get"], url_path="preview")
     def preview(self, request, pk=None):
         file_obj = self.get_object()
-        if not file_obj.mime_type.startswith('image/'):
-            return Response({'error': 'Preview not available for this file type.'}, status=status.HTTP_404_NOT_FOUND)
+        if not file_obj.mime_type.startswith("image/"):
+            return Response(
+                {"error": "Preview not available for this file type."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
 
         preview_io = FileService.generate_preview(file_obj, size=(200, 200))
         if preview_io is None:
-            return Response({'error': 'Could not generate preview.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            return Response(
+                {"error": "Could not generate preview."},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
 
-        return FileResponse(preview_io, content_type='image/jpeg')
+        return FileResponse(preview_io, content_type="image/jpeg")
 
     @action(detail=True, methods=["post"], url_path="share")
     def share(self, request, pk=None):

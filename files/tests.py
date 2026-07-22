@@ -484,37 +484,41 @@ class TestPublicLinks:
 class TestFilePreview:
     def setup_method(self):
         self.client = APIClient()
-        self.user = User.objects.create_user(username='testuser', email='test@example.com', password='testpass')
-        login_data = {'email': 'test@example.com', 'password': 'testpass'}
-        token_url = reverse('token_obtain_pair')
+        self.user = User.objects.create_user(
+            username="testuser", email="test@example.com", password="testpass"
+        )
+        login_data = {"email": "test@example.com", "password": "testpass"}
+        token_url = reverse("token_obtain_pair")
         response = self.client.post(token_url, login_data)
-        self.access_token = response.data['access']
-        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {self.access_token}')
+        self.access_token = response.data["access"]
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {self.access_token}")
 
     def teardown_method(self):
         cache.clear()
 
     def test_preview_for_image(self):
-        img = Image.new('RGB', (100, 100), color='red')
+        img = Image.new("RGB", (100, 100), color="red")
         img_io = io.BytesIO()
-        img.save(img_io, format='JPEG')
+        img.save(img_io, format="JPEG")
         img_io.seek(0)
-        uploaded = SimpleUploadedFile('test.jpg', img_io.read(), content_type='image/jpeg')
-        data = {'file': uploaded}
-        response = self.client.post(reverse('files-list'), data, format='multipart')
+        uploaded = SimpleUploadedFile(
+            "test.jpg", img_io.read(), content_type="image/jpeg"
+        )
+        data = {"file": uploaded}
+        response = self.client.post(reverse("files-list"), data, format="multipart")
         assert response.status_code == status.HTTP_201_CREATED
-        file_id = response.data['id']
-        preview_url = reverse('files-preview', args=[file_id])
+        file_id = response.data["id"]
+        preview_url = reverse("files-preview", args=[file_id])
         preview_response = self.client.get(preview_url)
         assert preview_response.status_code == status.HTTP_200_OK
-        assert preview_response['Content-Type'] == 'image/jpeg'
+        assert preview_response["Content-Type"] == "image/jpeg"
 
     def test_preview_for_text_file(self):
-        uploaded = SimpleUploadedFile('test.txt', b'content', content_type='text/plain')
-        data = {'file': uploaded}
-        response = self.client.post(reverse('files-list'), data, format='multipart')
+        uploaded = SimpleUploadedFile("test.txt", b"content", content_type="text/plain")
+        data = {"file": uploaded}
+        response = self.client.post(reverse("files-list"), data, format="multipart")
         assert response.status_code == status.HTTP_201_CREATED
-        file_id = response.data['id']
-        preview_url = reverse('files-preview', args=[file_id])
+        file_id = response.data["id"]
+        preview_url = reverse("files-preview", args=[file_id])
         preview_response = self.client.get(preview_url)
         assert preview_response.status_code == status.HTTP_404_NOT_FOUND
