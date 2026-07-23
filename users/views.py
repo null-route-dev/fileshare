@@ -1,11 +1,18 @@
+import logging
+from django.core.exceptions import ValidationError
 from rest_framework import viewsets, permissions, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from django.core.exceptions import ValidationError
+from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
+from rest_framework_simplejwt.exceptions import TokenError, InvalidToken
 from .models import User
 from .serializers import UserRegistrationSerializer, UserProfileSerializer
 from .services import UserService
 from .permissions import IsSelfProfile
+from config.logging_utils import audit_log, audit_logger
+
+
+logger = logging.getLogger("fileshare")
 
 
 class UserViewSet(viewsets.GenericViewSet):
@@ -25,6 +32,7 @@ class UserViewSet(viewsets.GenericViewSet):
         return super().get_permissions()
 
     @action(detail=False, methods=["post"], url_path="register")
+    @audit_log("register_user")
     def register(self, request):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -47,9 +55,14 @@ class UserViewSet(viewsets.GenericViewSet):
     @action(detail=False, methods=["get", "put", "patch"], url_path="profile")
     def profile(self, request):
         user = request.user
+        action_type = "view_profile" if request.method == "GET" else "update_profile"
 
         if request.method == "GET":
             serializer = UserProfileSerializer(user)
+            audit_logger.info(
+                f"{user.email} - {action_type} - SUCCESS",
+                extra={"user": user.email, "action": action_type, "status": "SUCCESS"},
+            )
             return Response(serializer.data)
 
         serializer = UserProfileSerializer(
@@ -59,8 +72,21 @@ class UserViewSet(viewsets.GenericViewSet):
 
         try:
             updated_user = UserService.update_profile(user, serializer.validated_data)
+            audit_logger.info(
+                f"{user.email} - {action_type} - SUCCESS",
+                extra={"user": user.email, "action": action_type, "status": "SUCCESS"},
+            )
             return Response(UserProfileSerializer(updated_user).data)
         except ValidationError as e:
+            audit_logger.error(
+                f"{user.email} - {action_type} - FAILED: {str(e)}",
+                extra={
+                    "user": user.email,
+                    "action": action_type,
+                    "status": "FAILED",
+                    "error": str(e),
+                },
+            )
             return Response(
                 {
                     "errors": e.message_dict
@@ -69,3 +95,75 @@ class UserViewSet(viewsets.GenericViewSet):
                 },
                 status=status.HTTP_400_BAD_REQUEST,
             )
+
+
+class CustomTokenObtainPairView(TokenObtainPairView):
+    def post(self, request, *args, **kwargs):
+        email = request.data.get("email", "unknown")
+        try:
+            response = super().post(request, *args, **kwargs)
+            audit_logger.info(
+                f"{email} - login - SUCCESS",
+                extra={"user": email, "action": "login", "status": "SUCCESS"},
+            )
+            return response
+        except (TokenError, InvalidToken) as e:
+            audit_logger.error(
+                f"{email} - login - FAILED: {str(e)}",
+                extra={
+                    "user": email,
+                    "action": "login",
+                    "status": "FAILED",
+                    "error": str(e),
+                },
+            )
+            raise
+        except Exception as e:
+            audit_logger.error(
+                f"{email} - login - FAILED: {str(e)}",
+                extra={
+                    "user": email,
+                    "action": "login",
+                    "status": "FAILED",
+                    "error": str(e),
+                },
+            )
+            raise
+
+
+class CustomTokenRefreshView(TokenRefreshView):
+    def post(self, request, *args, **kwargs):
+        user_email = "unknown"
+        try:
+            response = super().post(request, *args, **kwargs)
+            audit_logger.info(
+                f"{user_email} - refresh_token - SUCCESS",
+                extra={
+                    "user": user_email,
+                    "action": "refresh_token",
+                    "status": "SUCCESS",
+                },
+            )
+            return response
+        except (TokenError, InvalidToken) as e:
+            audit_logger.error(
+                f"{user_email} - refresh_token - FAILED: {str(e)}",
+                extra={
+                    "user": user_email,
+                    "action": "refresh_token",
+                    "status": "FAILED",
+                    "error": str(e),
+                },
+            )
+            raise
+        except Exception as e:
+            audit_logger.error(
+                f"{user_email} - refresh_token - FAILED: {str(e)}",
+                extra={
+                    "user": user_email,
+                    "action": "refresh_token",
+                    "status": "FAILED",
+                    "error": str(e),
+                },
+            )
+            raise
