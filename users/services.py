@@ -1,7 +1,11 @@
+import logging
 from django.core.exceptions import ValidationError
 from django.contrib.auth.password_validation import validate_password
 from django.db import IntegrityError
 from .models import User
+
+
+logger = logging.getLogger("fileshare")
 
 
 class UserService:
@@ -30,6 +34,8 @@ class UserService:
 
         try:
             user = User.objects.create_user(**user_data, password=password)
+            logger.info(f"User created: {user.email}")
+            return user
         except IntegrityError as e:
             if "username" in str(e):
                 raise ValidationError(
@@ -38,8 +44,6 @@ class UserService:
             if "email" in str(e):
                 raise ValidationError({"email": "User with this email already exists."})
             raise
-
-        return user
 
     @staticmethod
     def update_profile(user, data):
@@ -51,6 +55,8 @@ class UserService:
         try:
             user.full_clean()
             user.save()
+            logger.info(f"User profile updated: {user.email}")
+            return user
         except ValidationError as e:
             raise ValidationError(e.message_dict)
         except IntegrityError as e:
@@ -59,19 +65,3 @@ class UserService:
                     {"username": "User with this username already exists."}
                 )
             raise
-
-        return user
-
-    @staticmethod
-    def get_user_by_id(user_id):
-        try:
-            return User.objects.get(id=user_id)
-        except User.DoesNotExist:
-            return None
-
-    @staticmethod
-    def get_user_by_email(email):
-        try:
-            return User.objects.get(email=email)
-        except User.DoesNotExist:
-            return None
