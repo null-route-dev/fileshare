@@ -248,12 +248,12 @@ LOGGING = {
             "propagate": False,
         },
         "fileshare.access": {
-            "handlers": ["console", "access_file"],
+            "handlers": ["console", "access_file", "error_file"],
             "level": "INFO",
             "propagate": False,
         },
         "fileshare.audit": {
-            "handlers": ["console", "audit_file"],
+            "handlers": ["console", "audit_file", "error_file"],
             "level": "INFO",
             "propagate": False,
         },
@@ -263,7 +263,7 @@ LOGGING = {
             "propagate": False,
         },
         "django.db.backends": {
-            "handlers": ["console", "file"],
+            "handlers": ["console", "file", "error_file"],
             "level": "DEBUG" if DEBUG else "WARNING",
             "propagate": False,
         },

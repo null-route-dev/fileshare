@@ -78,7 +78,7 @@ class UserViewSet(viewsets.GenericViewSet):
             )
             return Response(UserProfileSerializer(updated_user).data)
         except ValidationError as e:
-            audit_logger.error(
+            audit_logger.warning(
                 f"{user.email} - {action_type} - FAILED: {str(e)}",
                 extra={
                     "user": user.email,
@@ -108,7 +108,7 @@ class CustomTokenObtainPairView(TokenObtainPairView):
             )
             return response
         except (TokenError, InvalidToken) as e:
-            audit_logger.error(
+            audit_logger.warning(
                 f"{email} - login - FAILED: {str(e)}",
                 extra={
                     "user": email,
@@ -127,6 +127,7 @@ class CustomTokenObtainPairView(TokenObtainPairView):
                     "status": "FAILED",
                     "error": str(e),
                 },
+                exc_info=True,
             )
             raise
 
@@ -146,7 +147,7 @@ class CustomTokenRefreshView(TokenRefreshView):
             )
             return response
         except (TokenError, InvalidToken) as e:
-            audit_logger.error(
+            audit_logger.warning(
                 f"{user_email} - refresh_token - FAILED: {str(e)}",
                 extra={
                     "user": user_email,
@@ -165,5 +166,6 @@ class CustomTokenRefreshView(TokenRefreshView):
                     "status": "FAILED",
                     "error": str(e),
                 },
+                exc_info=True,
             )
             raise

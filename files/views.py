@@ -21,6 +21,10 @@ from config.logging_utils import audit_logger
 from .services import FileService, SharingService
 from .permissions import IsOwnerOrReadOnly
 from .filters import FileFilter
+import logging
+
+
+logger = logging.getLogger("fileshare")
 
 
 class FileViewSet(viewsets.ModelViewSet):
@@ -55,6 +59,9 @@ class FileViewSet(viewsets.ModelViewSet):
     def destroy(self, request, *args, **kwargs):
         file_obj = self.get_object()
         if file_obj.user != request.user:
+            audit_logger.warning(
+                f"{request.user.email} - delete_file - file:{file_obj.id} - FAILED: Not owner"
+            )
             return Response(
                 {"error": "Only the owner can delete this file."},
                 status=status.HTTP_403_FORBIDDEN,
@@ -67,6 +74,7 @@ class FileViewSet(viewsets.ModelViewSet):
     def download(self, request, pk=None):
         file_obj = self.get_object()
         if not default_storage.exists(file_obj.s3_key):
+            logger.warning(f"File not found in storage: {file_obj.s3_key}")
             return Response(
                 {"error": "File not found"}, status=status.HTTP_404_NOT_FOUND
             )
@@ -77,11 +85,17 @@ class FileViewSet(viewsets.ModelViewSet):
                     file=file_obj, shared_with=request.user
                 )
                 if share.permission not in ["view", "edit"]:
+                    audit_logger.warning(
+                        f"{request.user.email} - download_file - file:{file_obj.id} - FAILED: Insufficient permissions"
+                    )
                     return Response(
                         {"error": "You do not have permission to download this file."},
                         status=status.HTTP_403_FORBIDDEN,
                     )
             except SharedAccess.DoesNotExist:
+                audit_logger.warning(
+                    f"{request.user.email} - download_file - file:{file_obj.id} - FAILED: No access"
+                )
                 return Response(
                     {"error": "You do not have permission to download this file."},
                     status=status.HTTP_403_FORBIDDEN,
@@ -102,6 +116,7 @@ class FileViewSet(viewsets.ModelViewSet):
     def preview(self, request, pk=None):
         file_obj = self.get_object()
         if not file_obj.mime_type.startswith("image/"):
+            logger.warning(f"Preview requested for non-image file: {file_obj.id}")
             return Response(
                 {"error": "Preview not available for this file type."},
                 status=status.HTTP_404_NOT_FOUND,
@@ -109,6 +124,7 @@ class FileViewSet(viewsets.ModelViewSet):
 
         preview_io = FileService.generate_preview(file_obj, size=(200, 200))
         if preview_io is None:
+            logger.error(f"Failed to generate preview for file {file_obj.id}")
             return Response(
                 {"error": "Could not generate preview."},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -121,6 +137,9 @@ class FileViewSet(viewsets.ModelViewSet):
     def share(self, request, pk=None):
         file_obj = self.get_object()
         if file_obj.user != request.user:
+            audit_logger.warning(
+                f"{request.user.email} - share_file - file:{file_obj.id} - FAILED: Not owner"
+            )
             return Response(
                 {"error": "Only the owner can share this file."},
                 status=status.HTTP_403_FORBIDDEN,
@@ -150,6 +169,9 @@ class FileViewSet(viewsets.ModelViewSet):
     def shares(self, request, pk=None):
         file_obj = self.get_object()
         if file_obj.user != request.user:
+            audit_logger.warning(
+                f"{request.user.email} - list_shares - file:{file_obj.id} - FAILED: Not owner"
+            )
             return Response(
                 {"error": "Only the owner can view shares."},
                 status=status.HTTP_403_FORBIDDEN,
@@ -164,6 +186,9 @@ class FileViewSet(viewsets.ModelViewSet):
     def remove_share(self, request, pk=None, share_id=None):
         file_obj = self.get_object()
         if file_obj.user != request.user:
+            audit_logger.warning(
+                f"{request.user.email} - remove_share - file:{file_obj.id} - FAILED: Not owner"
+            )
             return Response(
                 {"error": "Only the owner can remove shares."},
                 status=status.HTTP_403_FORBIDDEN,
@@ -172,6 +197,9 @@ class FileViewSet(viewsets.ModelViewSet):
         try:
             share = SharedAccess.objects.get(id=share_id, file=file_obj)
         except SharedAccess.DoesNotExist:
+            audit_logger.warning(
+                f"{request.user.email} - remove_share - share:{share_id} - FAILED: Not found"
+            )
             return Response(
                 {"error": "Share record not found."}, status=status.HTTP_404_NOT_FOUND
             )
@@ -195,6 +223,9 @@ class FileViewSet(viewsets.ModelViewSet):
     def transfer_ownership(self, request, pk=None):
         file_obj = self.get_object()
         if file_obj.user != request.user:
+            audit_logger.warning(
+                f"{request.user.email} - transfer_ownership - file:{file_obj.id} - FAILED: Not owner"
+            )
             return Response(
                 {"error": "Only the owner can transfer ownership."},
                 status=status.HTTP_403_FORBIDDEN,
@@ -223,11 +254,17 @@ class FileViewSet(viewsets.ModelViewSet):
         try:
             file_obj = File.objects.get(pk=pk)
         except File.DoesNotExist:
+            audit_logger.warning(
+                f"{request.user.email} - generate_public_link - file:{pk} - FAILED: Not found"
+            )
             return Response(
                 {"error": "File not found."}, status=status.HTTP_404_NOT_FOUND
             )
 
         if file_obj.user != request.user:
+            audit_logger.warning(
+                f"{request.user.email} - generate_public_link - file:{file_obj.id} - FAILED: Not owner"
+            )
             return Response(
                 {"error": "Only the owner can generate a public link."},
                 status=status.HTTP_403_FORBIDDEN,
@@ -264,7 +301,7 @@ class PublicDownloadView(APIView):
         try:
             file_id = SharingService.get_file_from_public_token(token)
         except ValidationError as e:
-            audit_logger.error(
+            audit_logger.warning(
                 f"{user} - public_download - token:{token} - FAILED: {str(e)}"
             )
             return Response({"error": str(e)}, status=status.HTTP_404_NOT_FOUND)
@@ -272,7 +309,7 @@ class PublicDownloadView(APIView):
         try:
             file_obj = File.objects.get(id=file_id)
         except File.DoesNotExist:
-            audit_logger.error(
+            audit_logger.warning(
                 f"{user} - public_download - file:{file_id} - FAILED: File not found"
             )
             return Response(
@@ -280,7 +317,7 @@ class PublicDownloadView(APIView):
             )
 
         if not default_storage.exists(file_obj.s3_key):
-            audit_logger.error(
+            audit_logger.warning(
                 f"{user} - public_download - file:{file_id} - FAILED: File not in storage"
             )
             return Response(
