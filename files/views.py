@@ -16,6 +16,8 @@ from .serializers import (
     ShareFileSerializer,
     TransferOwnershipSerializer,
 )
+from config.logging_utils import audit_log
+from config.logging_utils import audit_logger
 from .services import FileService, SharingService
 from .permissions import IsOwnerOrReadOnly
 from .filters import FileFilter
@@ -37,6 +39,7 @@ class FileViewSet(viewsets.ModelViewSet):
             models.Q(user=user) | models.Q(shared_accesses__shared_with=user)
         ).distinct()
 
+    @audit_log("upload_file")
     def create(self, request, *args, **kwargs):
         serializer = FileCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -48,6 +51,7 @@ class FileViewSet(viewsets.ModelViewSet):
         )
         return Response(FileSerializer(file_obj).data, status=status.HTTP_201_CREATED)
 
+    @audit_log("delete_file")
     def destroy(self, request, *args, **kwargs):
         file_obj = self.get_object()
         if file_obj.user != request.user:
@@ -59,6 +63,7 @@ class FileViewSet(viewsets.ModelViewSet):
         return Response(status=status.HTTP_204_NO_CONTENT)
 
     @action(detail=True, methods=["get"], url_path="download")
+    @audit_log("download_file")
     def download(self, request, pk=None):
         file_obj = self.get_object()
         if not default_storage.exists(file_obj.s3_key):
@@ -93,6 +98,7 @@ class FileViewSet(viewsets.ModelViewSet):
         return response
 
     @action(detail=True, methods=["get"], url_path="preview")
+    @audit_log("preview_file")
     def preview(self, request, pk=None):
         file_obj = self.get_object()
         if not file_obj.mime_type.startswith("image/"):
@@ -111,6 +117,7 @@ class FileViewSet(viewsets.ModelViewSet):
         return FileResponse(preview_io, content_type="image/jpeg")
 
     @action(detail=True, methods=["post"], url_path="share")
+    @audit_log("share_file")
     def share(self, request, pk=None):
         file_obj = self.get_object()
         if file_obj.user != request.user:
@@ -139,6 +146,7 @@ class FileViewSet(viewsets.ModelViewSet):
             )
 
     @action(detail=True, methods=["get"], url_path="shares")
+    @audit_log("list_shares")
     def shares(self, request, pk=None):
         file_obj = self.get_object()
         if file_obj.user != request.user:
@@ -152,6 +160,7 @@ class FileViewSet(viewsets.ModelViewSet):
         return Response(serializer.data)
 
     @action(detail=True, methods=["delete"], url_path="shares/(?P<share_id>[^/.]+)")
+    @audit_log("remove_share")
     def remove_share(self, request, pk=None, share_id=None):
         file_obj = self.get_object()
         if file_obj.user != request.user:
@@ -175,12 +184,14 @@ class FileViewSet(viewsets.ModelViewSet):
         return Response(status=status.HTTP_204_NO_CONTENT)
 
     @action(detail=False, methods=["get"], url_path="shared-with-me")
+    @audit_log("list_shared_with_me")
     def shared_with_me(self, request):
         files = SharingService.get_shared_files_for_user(request.user)
         serializer = FileSerializer(files, many=True)
         return Response(serializer.data)
 
     @action(detail=True, methods=["post"], url_path="transfer")
+    @audit_log("transfer_ownership")
     def transfer_ownership(self, request, pk=None):
         file_obj = self.get_object()
         if file_obj.user != request.user:
@@ -207,6 +218,7 @@ class FileViewSet(viewsets.ModelViewSet):
             )
 
     @action(detail=True, methods=["post"], url_path="generate-link")
+    @audit_log("generate_public_link")
     def generate_public_link(self, request, pk=None):
         try:
             file_obj = File.objects.get(pk=pk)
@@ -247,22 +259,43 @@ class PublicDownloadView(APIView):
     permission_classes = []
 
     def get(self, request, token):
+        user = request.user.email if request.user.is_authenticated else "anonymous"
+
         try:
             file_id = SharingService.get_file_from_public_token(token)
         except ValidationError as e:
+            audit_logger.error(
+                f"{user} - public_download - token:{token} - FAILED: {str(e)}"
+            )
             return Response({"error": str(e)}, status=status.HTTP_404_NOT_FOUND)
 
         try:
             file_obj = File.objects.get(id=file_id)
         except File.DoesNotExist:
+            audit_logger.error(
+                f"{user} - public_download - file:{file_id} - FAILED: File not found"
+            )
             return Response(
                 {"error": "File not found."}, status=status.HTTP_404_NOT_FOUND
             )
 
         if not default_storage.exists(file_obj.s3_key):
+            audit_logger.error(
+                f"{user} - public_download - file:{file_id} - FAILED: File not in storage"
+            )
             return Response(
                 {"error": "File not found."}, status=status.HTTP_404_NOT_FOUND
             )
+
+        audit_logger.info(
+            f"{user} - public_download - file:{file_id} - SUCCESS",
+            extra={
+                "user": user,
+                "action": "public_download",
+                "file_id": file_id,
+                "status": "SUCCESS",
+            },
+        )
 
         file_handle = default_storage.open(file_obj.s3_key, "rb")
         response = FileResponse(
