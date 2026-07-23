@@ -68,6 +68,7 @@ MIDDLEWARE = [
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
+    "config.middleware.RequestLogMiddleware",
 ]
 
 ROOT_URLCONF = "config.urls"
@@ -179,4 +180,92 @@ CACHES = {
         "BACKEND": "django.core.cache.backends.redis.RedisCache",
         "LOCATION": env("REDIS_URL"),
     }
+}
+
+LOG_DIR = BASE_DIR / "logs"
+LOG_DIR.mkdir(exist_ok=True)
+LOG_FILE = LOG_DIR / "fileshare.log"
+LOG_ERROR_FILE = LOG_DIR / "fileshare_error.log"
+LOG_ACCESS_FILE = LOG_DIR / "access.log"
+LOG_AUDIT_FILE = LOG_DIR / "audit.log"
+
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "formatters": {
+        "verbose": {
+            "format": "{asctime} - {levelname} - {name} - {message}",
+            "style": "{",
+        },
+        "simple": {
+            "format": "{asctime} - {levelname} - {message}",
+            "style": "{",
+        },
+        "audit": {
+            "format": "{asctime} - {message}",
+            "style": "{",
+        },
+    },
+    "handlers": {
+        "console": {
+            "class": "logging.StreamHandler",
+            "formatter": "verbose",
+        },
+        "file": {
+            "class": "logging.handlers.RotatingFileHandler",
+            "filename": LOG_FILE,
+            "maxBytes": 10 * 1024 * 1024,
+            "backupCount": 5,
+            "formatter": "verbose",
+        },
+        "error_file": {
+            "class": "logging.handlers.RotatingFileHandler",
+            "filename": LOG_ERROR_FILE,
+            "maxBytes": 10 * 1024 * 1024,
+            "backupCount": 5,
+            "formatter": "verbose",
+            "level": "ERROR",
+        },
+        "access_file": {
+            "class": "logging.handlers.RotatingFileHandler",
+            "filename": LOG_ACCESS_FILE,
+            "maxBytes": 10 * 1024 * 1024,
+            "backupCount": 5,
+            "formatter": "simple",
+        },
+        "audit_file": {
+            "class": "logging.handlers.RotatingFileHandler",
+            "filename": LOG_AUDIT_FILE,
+            "maxBytes": 10 * 1024 * 1024,
+            "backupCount": 5,
+            "formatter": "audit",
+        },
+    },
+    "loggers": {
+        "fileshare": {
+            "handlers": ["console", "file", "error_file"],
+            "level": "INFO",
+            "propagate": False,
+        },
+        "fileshare.access": {
+            "handlers": ["console", "access_file"],
+            "level": "INFO",
+            "propagate": False,
+        },
+        "fileshare.audit": {
+            "handlers": ["console", "audit_file"],
+            "level": "INFO",
+            "propagate": False,
+        },
+        "django": {
+            "handlers": ["console", "file", "error_file"],
+            "level": "INFO",
+            "propagate": False,
+        },
+        "django.db.backends": {
+            "handlers": ["console", "file"],
+            "level": "DEBUG" if DEBUG else "WARNING",
+            "propagate": False,
+        },
+    },
 }
