@@ -155,3 +155,10 @@ CACHES = {
         "LOCATION": "unique-snowflake",
     }
 }
+
+# Rate Limiting (disabled for tests)
+RATELIMIT_AUTH_RATE = "1000/m"
+RATELIMIT_WRITE_RATE = "1000/m"
+RATELIMIT_READ_RATE = "1000/m"
+RATELIMIT_PUBLIC_RATE = "1000/m"
+RATELIMIT_ENABLE = False
