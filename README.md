@@ -23,17 +23,21 @@
 - File upload, download, list, and delete
 - S3-compatible storage integration (MinIO)
 - File ownership and access control
+- File sharing with other users (SharedAccess)
+- Ownership transfer
+- One-time TTL public links (expiring, no authentication required)
+- Image preview generation (on-the-fly, no storage)
+- Filtering, search, and sorting for files
 - Admin panel for data management
-- Async database operations
 - Comprehensive test coverage
 - Docker containerization
-- CI/CD pipeline (GitHub Actions)
+- CI/CD pipeline (GitHub Actions) with GHCR deployment
+- Swagger/OpenAPI documentation
+- Request logging middleware
+- Audit logging for business events
+- Error logging with stack traces
+- SQL query logging (DEBUG mode)
 - Linting with Ruff
-
-### Planned
-- File sharing with other users (SharedAccess)
-- Temporary TTL links
-- File filtering and search
 
 ## API Endpoints
 
@@ -43,18 +47,26 @@
 | POST | `/api/token/` | Login — get JWT tokens |
 | POST | `/api/token/refresh/` | Refresh JWT access token |
 | POST | `/api/users/register/` | Register new user |
+| GET | `/api/public/{token}/` | Download file via one-time TTL link |
 
 ### Protected (JWT required)
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | GET | `/api/users/profile/` | Get current user profile |
-| PUT/PATCH | `/api/users/profile/` | Update user profile |
-| GET | `/api/files/` | List all user files |
+| PUT/PATCH | `/api/users/profile/` | Update current user profile |
+| GET | `/api/files/` | List all files (own + shared with me) |
 | POST | `/api/files/` | Upload a file |
 | GET | `/api/files/{id}/` | Get file metadata |
-| GET | `/api/files/{id}/download/` | Download a file |
 | PUT/PATCH | `/api/files/{id}/` | Update file metadata |
 | DELETE | `/api/files/{id}/` | Delete a file |
+| GET | `/api/files/{id}/download/` | Download the actual file |
+| GET | `/api/files/{id}/preview/` | Get image preview (on-the-fly) |
+| POST | `/api/files/{id}/share/` | Share file with another user |
+| GET | `/api/files/{id}/shares/` | List all shares for a file |
+| DELETE | `/api/files/{id}/shares/{share_id}/` | Remove a share |
+| GET | `/api/files/shared-with-me/` | List files shared with me |
+| POST | `/api/files/{id}/transfer/` | Transfer ownership to another user |
+| POST | `/api/files/{id}/generate-link/` | Generate one-time TTL public link |
 
 ## Authentication
 
@@ -135,6 +147,15 @@ docker-compose down
 # Stop and remove volumes (data)
 docker-compose down -v
 ```
+
+## Logging
+
+| Log File | Content |
+|----------|---------|
+| `logs/fileshare.log` | General logs (INFO, WARNING) |
+| `logs/fileshare_error.log` | Critical errors (ERROR) |
+| `logs/access.log` | HTTP requests (method, path, status, duration, user) |
+| `logs/audit.log` | Business events (upload, delete, share, login, etc.) |
 
 ## Testing
 

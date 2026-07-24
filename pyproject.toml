@@ -1,6 +1,6 @@
 [project]
 name = "fileshare"
-version = "0.2.0"
+version = "0.3.0"
 description = ""
 authors = [
     {name = "null-route-dev",email = "null-route-dev@protonmail.com"}
