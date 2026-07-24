@@ -1,10 +1,13 @@
 import logging
 from django.core.exceptions import ValidationError
+from django.utils.decorators import method_decorator
 from rest_framework import viewsets, permissions, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 from rest_framework_simplejwt.exceptions import TokenError, InvalidToken
+from django_ratelimit.decorators import ratelimit
+from django.conf import settings
 from .models import User
 from .serializers import UserRegistrationSerializer, UserProfileSerializer
 from .services import UserService
@@ -15,6 +18,10 @@ from config.logging_utils import audit_log, audit_logger
 logger = logging.getLogger("fileshare")
 
 
+@method_decorator(
+    ratelimit(key="ip", rate=settings.RATELIMIT_AUTH_RATE, method="POST", block=True),
+    name="dispatch",
+)
 class UserViewSet(viewsets.GenericViewSet):
     queryset = User.objects.all()
     permission_classes = [permissions.IsAuthenticated]
@@ -97,6 +104,10 @@ class UserViewSet(viewsets.GenericViewSet):
             )
 
 
+@method_decorator(
+    ratelimit(key="ip", rate=settings.RATELIMIT_AUTH_RATE, method="POST", block=True),
+    name="dispatch",
+)
 class CustomTokenObtainPairView(TokenObtainPairView):
     def post(self, request, *args, **kwargs):
         email = request.data.get("email", "unknown")
@@ -132,6 +143,10 @@ class CustomTokenObtainPairView(TokenObtainPairView):
             raise
 
 
+@method_decorator(
+    ratelimit(key="ip", rate=settings.RATELIMIT_AUTH_RATE, method="POST", block=True),
+    name="dispatch",
+)
 class CustomTokenRefreshView(TokenRefreshView):
     def post(self, request, *args, **kwargs):
         user_email = "unknown"

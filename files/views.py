@@ -2,12 +2,15 @@ from django.db import models
 from django.http import FileResponse
 from django.core.files.storage import default_storage
 from django.core.exceptions import ValidationError
+from django.utils.decorators import method_decorator
+from django.conf import settings
 from rest_framework import viewsets, permissions, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework.filters import SearchFilter, OrderingFilter
+from django_ratelimit.decorators import ratelimit
 from .models import File, SharedAccess
 from .serializers import (
     FileSerializer,
@@ -16,8 +19,7 @@ from .serializers import (
     ShareFileSerializer,
     TransferOwnershipSerializer,
 )
-from config.logging_utils import audit_log
-from config.logging_utils import audit_logger
+from config.logging_utils import audit_log, audit_logger
 from .services import FileService, SharingService
 from .permissions import IsOwnerOrReadOnly
 from .filters import FileFilter
@@ -27,6 +29,22 @@ import logging
 logger = logging.getLogger("fileshare")
 
 
+@method_decorator(
+    ratelimit(
+        key="user", rate=settings.RATELIMIT_WRITE_RATE, method="POST", block=True
+    ),
+    name="dispatch",
+)
+@method_decorator(
+    ratelimit(
+        key="user", rate=settings.RATELIMIT_WRITE_RATE, method="DELETE", block=True
+    ),
+    name="dispatch",
+)
+@method_decorator(
+    ratelimit(key="user", rate=settings.RATELIMIT_READ_RATE, method="GET", block=True),
+    name="dispatch",
+)
 class FileViewSet(viewsets.ModelViewSet):
     queryset = File.objects.all()
     serializer_class = FileSerializer
@@ -292,6 +310,10 @@ class FileViewSet(viewsets.ModelViewSet):
             )
 
 
+@method_decorator(
+    ratelimit(key="ip", rate=settings.RATELIMIT_PUBLIC_RATE, method="GET", block=True),
+    name="dispatch",
+)
 class PublicDownloadView(APIView):
     permission_classes = []
 
